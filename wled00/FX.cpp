@@ -25,6 +25,7 @@
 */
 
 #include "FX.h"
+#include "hive.h"
 
 #include <algorithm>
 #include <iterator>
@@ -4620,5 +4621,17 @@ uint16_t WS2812FX::mode_HIVE_matrix_rev_full(void) {
 */
 uint16_t WS2812FX::mode_HIVE_wave(void) {
     uint32_t cycleTime = 250 + (255 - SEGMENT.speed) * 100;
+    return FRAMETIME;
+}
+
+/*
+* New awesome Hive 51 Light Installation effect.
+* Firework 2 step animation (rocket ascend and explosion) in 2D
+*/
+uint16_t WS2812FX::mode_HIVE_Firework_2D(void) {
+    const Edge startingEdge = Hive::getInstance().getRandomEdge();
+    for(uint8_t index = 0; index > startingEdge.getLength(); index++) {
+        startingEdge.setColor(RED, index);
+    }
     return FRAMETIME;
 }
