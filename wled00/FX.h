@@ -116,7 +116,7 @@
 #define IS_REVERSE      ((SEGMENT.options & REVERSE     ) == REVERSE     )
 #define IS_SELECTED     ((SEGMENT.options & SELECTED    ) == SELECTED    )
 
-#define MODE_COUNT  126
+#define MODE_COUNT  127
 
 #define FX_MODE_STATIC                   0
 #define FX_MODE_BLINK                    1
@@ -244,6 +244,7 @@
 #define FX_MODE_HIVE_WAVE              123 // custom effect for HIVE
 #define FX_MODE_HIVE_MATRIX_FULL       124 // custom effect for HIVE
 #define FX_MODE_HIVE_MATRIX_REV_FULL   125 // custom effect for HIVE
+#define FX_MODE_HIVE_FIREWORKS_2D      126 // custom effect for HIVE
 
 
 class WS2812FX {
@@ -252,10 +253,17 @@ class WS2812FX {
   // pre show callback
   typedef void (*show_callback) (void);
 
-  static WS2812FX* instance;
-  
+  // private:
+    // WS2812FX(WS2812FX const&);
+    // void operator=(WS2812FX const&);
+
   // segment parameters
   public:
+    static WS2812FX& getInstance() {
+      static WS2812FX instance;
+      return instance;
+    }
+
     typedef struct Segment { // 30 (32 in memory) bytes
       uint16_t start;
       uint16_t stop; //segment invalid if stop == 0
@@ -274,7 +282,7 @@ class WS2812FX {
         if (slot >= NUM_COLORS || segn >= MAX_NUM_SEGMENTS) return false;
         if (c == colors[slot]) return false;
         uint8_t b = (slot == 1) ? cct : opacity;
-        ColorTransition::startTransition(b, colors[slot], instance->_transitionDur, segn, slot);
+        ColorTransition::startTransition(b, colors[slot], getInstance()._transitionDur, segn, slot);
         colors[slot] = c; return true;
       }
       void setCCT(uint16_t k, uint8_t segn) {
@@ -285,13 +293,13 @@ class WS2812FX {
           k = (k - 1900) >> 5;
         }
         if (cct == k) return;
-        ColorTransition::startTransition(cct, colors[1], instance->_transitionDur, segn, 1);
+        ColorTransition::startTransition(cct, colors[1], getInstance()._transitionDur, segn, 1);
         cct = k;
       }
       void setOpacity(uint8_t o, uint8_t segn) {
         if (segn >= MAX_NUM_SEGMENTS) return;
         if (opacity == o) return;
-        ColorTransition::startTransition(opacity, colors[0], instance->_transitionDur, segn, 0);
+        ColorTransition::startTransition(opacity, colors[0], getInstance()._transitionDur, segn, 0);
         opacity = o;
       }
       void setOption(uint8_t n, bool val, uint8_t segn = 255)
@@ -300,7 +308,7 @@ class WS2812FX {
         if (n == SEG_OPTION_ON) {
           prevOn = getOption(SEG_OPTION_ON);
           if (!val && prevOn) { //fade off
-            ColorTransition::startTransition(opacity, colors[0], instance->_transitionDur, segn, 0);
+            ColorTransition::startTransition(opacity, colors[0], getInstance()._transitionDur, segn, 0);
           }
         }
 
@@ -312,7 +320,7 @@ class WS2812FX {
         }
 
         if (n == SEG_OPTION_ON && val && !prevOn) { //fade on
-          ColorTransition::startTransition(0, colors[0], instance->_transitionDur, segn, 0);
+          ColorTransition::startTransition(0, colors[0], getInstance()._transitionDur, segn, 0);
         }
       }
       bool getOption(uint8_t n)
@@ -377,7 +385,7 @@ class WS2812FX {
       bool allocateData(uint16_t len){
         if (data && _dataLen == len) return true; //already allocated
         deallocateData();
-        if (WS2812FX::instance->_usedSegmentData + len > MAX_SEGMENT_DATA) return false; //not enough memory
+        if (getInstance()._usedSegmentData + len > MAX_SEGMENT_DATA) return false; //not enough memory
         // if possible use SPI RAM on ESP32
         #if defined(ARDUINO_ARCH_ESP32) && defined(WLED_USE_PSRAM)
         if (psramFound())
@@ -386,7 +394,7 @@ class WS2812FX {
         #endif
           data = (byte*) malloc(len);
         if (!data) return false; //allocation failed
-        WS2812FX::instance->_usedSegmentData += len;
+        getInstance()._usedSegmentData += len;
         _dataLen = len;
         memset(data, 0, len);
         return true;
@@ -394,7 +402,7 @@ class WS2812FX {
       void deallocateData(){
         free(data);
         data = nullptr;
-        WS2812FX::instance->_usedSegmentData -= _dataLen;
+        getInstance()._usedSegmentData -= _dataLen;
         _dataLen = 0;
       }
 
@@ -432,14 +440,14 @@ class WS2812FX {
       uint8_t briOld = 0;
       static void startTransition(uint8_t oldBri, uint32_t oldCol, uint16_t dur, uint8_t segn, uint8_t slot) {
         if (segn >= MAX_NUM_SEGMENTS || slot >= NUM_COLORS || dur == 0) return;
-        if (instance->_brightness == 0) return; //do not need transitions if master bri is off
-        if (!instance->_segments[segn].getOption(SEG_OPTION_ON)) return; //not if segment is off either
+        if (getInstance()._brightness == 0) return; //do not need transitions if master bri is off
+        if (!getInstance()._segments[segn].getOption(SEG_OPTION_ON)) return; //not if segment is off either
         uint8_t tIndex = 0xFF; //none found
         uint16_t tProgression = 0;
         uint8_t s = segn + (slot << 6); //merge slot and segment into one byte
 
         for (uint8_t i = 0; i < MAX_NUM_TRANSITIONS; i++) {
-          uint8_t tSeg = instance->transitions[i].segment;
+          uint8_t tSeg = getInstance().transitions[i].segment;
           //see if this segment + color already has a running transition
           if (tSeg == s) {
             tIndex = i; break;
@@ -452,14 +460,14 @@ class WS2812FX {
         if (tIndex == 0xFF) { //no slot found yet
           for (uint8_t i = 0; i < MAX_NUM_TRANSITIONS; i++) {
             //find most progressed transition to overwrite
-            uint16_t prog = instance->transitions[i].progress();
+            uint16_t prog = getInstance().transitions[i].progress();
             if (prog > tProgression) {
               tIndex = i; tProgression = prog;
             }
           }
         }
 
-        ColorTransition& t = instance->transitions[tIndex];
+        ColorTransition& t = getInstance().transitions[tIndex];
         if (t.segment == s) //this is an active transition on the same segment+color
         {
           bool wasTurningOff = (oldBri == 0);
@@ -469,21 +477,21 @@ class WS2812FX {
           t.briOld = oldBri;
           t.colorOld = oldCol;
           uint8_t prevSeg = t.segment & 0x3F;
-          if (prevSeg < MAX_NUM_SEGMENTS) instance->_segments[prevSeg].setOption(SEG_OPTION_TRANSITIONAL, false);
+          if (prevSeg < MAX_NUM_SEGMENTS) getInstance()._segments[prevSeg].setOption(SEG_OPTION_TRANSITIONAL, false);
         }
         t.transitionDur = dur;
         t.transitionStart = millis();
         t.segment = s;
-        instance->_segments[segn].setOption(SEG_OPTION_TRANSITIONAL, true);
+        getInstance()._segments[segn].setOption(SEG_OPTION_TRANSITIONAL, true);
         //refresh immediately, required for Solid mode
-        if (instance->_segment_runtimes[segn].next_time > t.transitionStart + 22) instance->_segment_runtimes[segn].next_time = t.transitionStart;
+        if (getInstance()._segment_runtimes[segn].next_time > t.transitionStart + 22) getInstance()._segment_runtimes[segn].next_time = t.transitionStart;
       }
       uint16_t progress(bool allowEnd = false) { //transition progression between 0-65535
         uint32_t timeNow = millis();
         if (timeNow - transitionStart > transitionDur) {
           if (allowEnd) {
             uint8_t segn = segment & 0x3F;
-            if (segn < MAX_NUM_SEGMENTS) instance->_segments[segn].setOption(SEG_OPTION_TRANSITIONAL, false);
+            if (segn < MAX_NUM_SEGMENTS) getInstance()._segments[segn].setOption(SEG_OPTION_TRANSITIONAL, false);
             segment = 0xFF;
           }
           return 0xFFFF;
@@ -493,160 +501,24 @@ class WS2812FX {
         return (prog > 0xFFFF) ? 0xFFFF : prog;
       }
       uint32_t currentColor(uint32_t colorNew) {
-        return instance->color_blend(colorOld, colorNew, progress(true), true);
+        return getInstance().color_blend(colorOld, colorNew, progress(true), true);
       }
       uint8_t currentBri(bool turningOff = false, uint8_t slot = 0) {
         uint8_t segn = segment & 0x3F;
         if (segn >= MAX_NUM_SEGMENTS) return 0;
-        uint8_t briNew = instance->_segments[segn].opacity;
+        uint8_t briNew = getInstance()._segments[segn].opacity;
         if (slot == 0) {
-          if (!instance->_segments[segn].getOption(SEG_OPTION_ON) || turningOff) briNew = 0;
+          if (!getInstance()._segments[segn].getOption(SEG_OPTION_ON) || turningOff) briNew = 0;
         } else { //transition slot 1 brightness for CCT transition
-          briNew = instance->_segments[segn].cct;
+          briNew = getInstance()._segments[segn].cct;
         }
         uint32_t prog = progress() + 1;
         return ((briNew * prog) + (briOld * (0x10000 - prog))) >> 16;
       }
     } color_transition;
 
-    WS2812FX() {
-      WS2812FX::instance = this;
-      //assign each member of the _mode[] array to its respective function reference 
-      _mode[FX_MODE_STATIC]                  = &WS2812FX::mode_static;
-      _mode[FX_MODE_BLINK]                   = &WS2812FX::mode_blink;
-      _mode[FX_MODE_COLOR_WIPE]              = &WS2812FX::mode_color_wipe;
-      _mode[FX_MODE_COLOR_WIPE_RANDOM]       = &WS2812FX::mode_color_wipe_random;
-      _mode[FX_MODE_RANDOM_COLOR]            = &WS2812FX::mode_random_color;
-      _mode[FX_MODE_COLOR_SWEEP]             = &WS2812FX::mode_color_sweep;
-      _mode[FX_MODE_DYNAMIC]                 = &WS2812FX::mode_dynamic;
-      _mode[FX_MODE_RAINBOW]                 = &WS2812FX::mode_rainbow;
-      _mode[FX_MODE_RAINBOW_CYCLE]           = &WS2812FX::mode_rainbow_cycle;
-      _mode[FX_MODE_SCAN]                    = &WS2812FX::mode_scan;
-      _mode[FX_MODE_DUAL_SCAN]               = &WS2812FX::mode_dual_scan;
-      _mode[FX_MODE_FADE]                    = &WS2812FX::mode_fade;
-      _mode[FX_MODE_THEATER_CHASE]           = &WS2812FX::mode_theater_chase;
-      _mode[FX_MODE_THEATER_CHASE_RAINBOW]   = &WS2812FX::mode_theater_chase_rainbow;
-      _mode[FX_MODE_SAW]                     = &WS2812FX::mode_saw;
-      _mode[FX_MODE_TWINKLE]                 = &WS2812FX::mode_twinkle;
-      _mode[FX_MODE_DISSOLVE]                = &WS2812FX::mode_dissolve;
-      _mode[FX_MODE_DISSOLVE_RANDOM]         = &WS2812FX::mode_dissolve_random;
-      _mode[FX_MODE_SPARKLE]                 = &WS2812FX::mode_sparkle;
-      _mode[FX_MODE_FLASH_SPARKLE]           = &WS2812FX::mode_flash_sparkle;
-      _mode[FX_MODE_HYPER_SPARKLE]           = &WS2812FX::mode_hyper_sparkle;
-      _mode[FX_MODE_STROBE]                  = &WS2812FX::mode_strobe;
-      _mode[FX_MODE_STROBE_RAINBOW]          = &WS2812FX::mode_strobe_rainbow;
-      _mode[FX_MODE_MULTI_STROBE]            = &WS2812FX::mode_multi_strobe;
-      _mode[FX_MODE_BLINK_RAINBOW]           = &WS2812FX::mode_blink_rainbow;
-      _mode[FX_MODE_ANDROID]                 = &WS2812FX::mode_android;
-      _mode[FX_MODE_CHASE_COLOR]             = &WS2812FX::mode_chase_color;
-      _mode[FX_MODE_CHASE_RANDOM]            = &WS2812FX::mode_chase_random;
-      _mode[FX_MODE_CHASE_RAINBOW]           = &WS2812FX::mode_chase_rainbow;
-      _mode[FX_MODE_CHASE_FLASH]             = &WS2812FX::mode_chase_flash;
-      _mode[FX_MODE_CHASE_FLASH_RANDOM]      = &WS2812FX::mode_chase_flash_random;
-      _mode[FX_MODE_CHASE_RAINBOW_WHITE]     = &WS2812FX::mode_chase_rainbow_white;
-      _mode[FX_MODE_COLORFUL]                = &WS2812FX::mode_colorful;
-      _mode[FX_MODE_TRAFFIC_LIGHT]           = &WS2812FX::mode_traffic_light;
-      _mode[FX_MODE_COLOR_SWEEP_RANDOM]      = &WS2812FX::mode_color_sweep_random;
-      _mode[FX_MODE_RUNNING_COLOR]           = &WS2812FX::mode_running_color;
-      _mode[FX_MODE_AURORA]                  = &WS2812FX::mode_aurora;
-      _mode[FX_MODE_RUNNING_RANDOM]          = &WS2812FX::mode_running_random;
-      _mode[FX_MODE_LARSON_SCANNER]          = &WS2812FX::mode_larson_scanner;
-      _mode[FX_MODE_COMET]                   = &WS2812FX::mode_comet;
-      _mode[FX_MODE_FIREWORKS]               = &WS2812FX::mode_fireworks;
-      _mode[FX_MODE_RAIN]                    = &WS2812FX::mode_rain;
-      _mode[FX_MODE_TETRIX]                  = &WS2812FX::mode_tetrix;
-      _mode[FX_MODE_FIRE_FLICKER]            = &WS2812FX::mode_fire_flicker;
-      _mode[FX_MODE_GRADIENT]                = &WS2812FX::mode_gradient;
-      _mode[FX_MODE_LOADING]                 = &WS2812FX::mode_loading;
-      _mode[FX_MODE_POLICE]                  = &WS2812FX::mode_police;
-      _mode[FX_MODE_FAIRY]                   = &WS2812FX::mode_fairy;
-      _mode[FX_MODE_TWO_DOTS]                = &WS2812FX::mode_two_dots;
-      _mode[FX_MODE_FAIRYTWINKLE]            = &WS2812FX::mode_fairytwinkle;
-      _mode[FX_MODE_RUNNING_DUAL]            = &WS2812FX::mode_running_dual;
-      _mode[FX_MODE_HALLOWEEN]               = &WS2812FX::mode_halloween;
-      _mode[FX_MODE_TRICOLOR_CHASE]          = &WS2812FX::mode_tricolor_chase;
-      _mode[FX_MODE_TRICOLOR_WIPE]           = &WS2812FX::mode_tricolor_wipe;
-      _mode[FX_MODE_TRICOLOR_FADE]           = &WS2812FX::mode_tricolor_fade;
-      _mode[FX_MODE_BREATH]                  = &WS2812FX::mode_breath;
-      _mode[FX_MODE_RUNNING_LIGHTS]          = &WS2812FX::mode_running_lights;
-      _mode[FX_MODE_LIGHTNING]               = &WS2812FX::mode_lightning;
-      _mode[FX_MODE_ICU]                     = &WS2812FX::mode_icu;
-      _mode[FX_MODE_MULTI_COMET]             = &WS2812FX::mode_multi_comet;
-      _mode[FX_MODE_DUAL_LARSON_SCANNER]     = &WS2812FX::mode_dual_larson_scanner;
-      _mode[FX_MODE_RANDOM_CHASE]            = &WS2812FX::mode_random_chase;
-      _mode[FX_MODE_OSCILLATE]               = &WS2812FX::mode_oscillate;
-      _mode[FX_MODE_FIRE_2012]               = &WS2812FX::mode_fire_2012;
-      _mode[FX_MODE_PRIDE_2015]              = &WS2812FX::mode_pride_2015;
-      _mode[FX_MODE_BPM]                     = &WS2812FX::mode_bpm;
-      _mode[FX_MODE_JUGGLE]                  = &WS2812FX::mode_juggle;
-      _mode[FX_MODE_PALETTE]                 = &WS2812FX::mode_palette;
-      _mode[FX_MODE_COLORWAVES]              = &WS2812FX::mode_colorwaves;
-      _mode[FX_MODE_FILLNOISE8]              = &WS2812FX::mode_fillnoise8;
-      _mode[FX_MODE_NOISE16_1]               = &WS2812FX::mode_noise16_1;
-      _mode[FX_MODE_NOISE16_2]               = &WS2812FX::mode_noise16_2;
-      _mode[FX_MODE_NOISE16_3]               = &WS2812FX::mode_noise16_3;
-      _mode[FX_MODE_NOISE16_4]               = &WS2812FX::mode_noise16_4;
-      _mode[FX_MODE_COLORTWINKLE]            = &WS2812FX::mode_colortwinkle;
-      _mode[FX_MODE_LAKE]                    = &WS2812FX::mode_lake;
-      _mode[FX_MODE_METEOR]                  = &WS2812FX::mode_meteor;
-      _mode[FX_MODE_METEOR_SMOOTH]           = &WS2812FX::mode_meteor_smooth;
-      _mode[FX_MODE_RAILWAY]                 = &WS2812FX::mode_railway;
-      _mode[FX_MODE_RIPPLE]                  = &WS2812FX::mode_ripple;
-      _mode[FX_MODE_TWINKLEFOX]              = &WS2812FX::mode_twinklefox;
-      _mode[FX_MODE_TWINKLECAT]              = &WS2812FX::mode_twinklecat;
-      _mode[FX_MODE_HALLOWEEN_EYES]          = &WS2812FX::mode_halloween_eyes;
-      _mode[FX_MODE_STATIC_PATTERN]          = &WS2812FX::mode_static_pattern;
-      _mode[FX_MODE_TRI_STATIC_PATTERN]      = &WS2812FX::mode_tri_static_pattern;
-      _mode[FX_MODE_SPOTS]                   = &WS2812FX::mode_spots;
-      _mode[FX_MODE_SPOTS_FADE]              = &WS2812FX::mode_spots_fade;
-      _mode[FX_MODE_GLITTER]                 = &WS2812FX::mode_glitter;
-      _mode[FX_MODE_CANDLE]                  = &WS2812FX::mode_candle;
-      _mode[FX_MODE_STARBURST]               = &WS2812FX::mode_starburst;
-      _mode[FX_MODE_EXPLODING_FIREWORKS]     = &WS2812FX::mode_exploding_fireworks;
-      _mode[FX_MODE_BOUNCINGBALLS]           = &WS2812FX::mode_bouncing_balls;
-      _mode[FX_MODE_SINELON]                 = &WS2812FX::mode_sinelon;
-      _mode[FX_MODE_SINELON_DUAL]            = &WS2812FX::mode_sinelon_dual;
-      _mode[FX_MODE_SINELON_RAINBOW]         = &WS2812FX::mode_sinelon_rainbow;
-      _mode[FX_MODE_POPCORN]                 = &WS2812FX::mode_popcorn;
-      _mode[FX_MODE_DRIP]                    = &WS2812FX::mode_drip;
-      _mode[FX_MODE_PLASMA]                  = &WS2812FX::mode_plasma;
-      _mode[FX_MODE_PERCENT]                 = &WS2812FX::mode_percent;
-      _mode[FX_MODE_RIPPLE_RAINBOW]          = &WS2812FX::mode_ripple_rainbow;
-      _mode[FX_MODE_HEARTBEAT]               = &WS2812FX::mode_heartbeat;
-      _mode[FX_MODE_PACIFICA]                = &WS2812FX::mode_pacifica;
-      _mode[FX_MODE_CANDLE_MULTI]            = &WS2812FX::mode_candle_multi;
-      _mode[FX_MODE_SOLID_GLITTER]           = &WS2812FX::mode_solid_glitter;
-      _mode[FX_MODE_SUNRISE]                 = &WS2812FX::mode_sunrise;
-      _mode[FX_MODE_PHASED]                  = &WS2812FX::mode_phased;
-      _mode[FX_MODE_TWINKLEUP]               = &WS2812FX::mode_twinkleup;
-      _mode[FX_MODE_NOISEPAL]                = &WS2812FX::mode_noisepal;
-      _mode[FX_MODE_SINEWAVE]                = &WS2812FX::mode_sinewave;
-      _mode[FX_MODE_PHASEDNOISE]             = &WS2812FX::mode_phased_noise;
-      _mode[FX_MODE_FLOW]                    = &WS2812FX::mode_flow;
-      _mode[FX_MODE_CHUNCHUN]                = &WS2812FX::mode_chunchun;
-      _mode[FX_MODE_DANCING_SHADOWS]         = &WS2812FX::mode_dancing_shadows;
-      _mode[FX_MODE_WASHING_MACHINE]         = &WS2812FX::mode_washing_machine;
-      _mode[FX_MODE_CANDY_CANE]              = &WS2812FX::mode_candy_cane;
-      _mode[FX_MODE_BLENDS]                  = &WS2812FX::mode_blends;
-      _mode[FX_MODE_TV_SIMULATOR]            = &WS2812FX::mode_tv_simulator;
-      _mode[FX_MODE_DYNAMIC_SMOOTH]          = &WS2812FX::mode_dynamic_smooth;
-      _mode[FX_MODE_HIVE_STROBE_SEG]         = &WS2812FX::mode_HIVE_strobing_segments; // custom effect for HIVE
-      _mode[FX_MODE_HIVE_ROTATE]             = &WS2812FX::mode_HIVE_rotate; // custom effect for HIVE
-      _mode[FX_MODE_HIVE_ROTATE_REV]         = &WS2812FX::mode_HIVE_rotate_rev; // custom effect for HIVE
-      _mode[FX_MODE_HIVE_MATRIX]             = &WS2812FX::mode_HIVE_matrix; // custom effect for HIVE
-      _mode[FX_MODE_HIVE_MATRIX_REV]         = &WS2812FX::mode_HIVE_matrix_rev; // custom effect for HIVE
-      _mode[FX_MODE_HIVE_MATRIX_FULL]        = &WS2812FX::mode_HIVE_matrix_full; // custom effect for HIVE
-      _mode[FX_MODE_HIVE_MATRIX_REV_FULL]    = &WS2812FX::mode_HIVE_matrix_rev_full; // custom effect for HIVE
-      _mode[FX_MODE_HIVE_WAVE]               = &WS2812FX::mode_HIVE_wave; //custom effect for HIVE
-
-      _brightness = DEFAULT_BRIGHTNESS;
-      currentPalette = CRGBPalette16(CRGB::Black);
-      targetPalette = CloudColors_p;
-      ablMilliampsMax = 850;
-      currentMilliamps = 0;
-      timebase = 0;
-      resetSegments();
-    }
+    WS2812FX(WS2812FX const&) = delete;
+    void operator=(WS2812FX const&) = delete;
 
     void
       finalizeInit(),
@@ -866,9 +738,149 @@ class WS2812FX {
       mode_HIVE_matrix_rev(void),        // custom effect for HIVE
       mode_HIVE_matrix_full(void),       // custom effect for HIVE
       mode_HIVE_matrix_rev_full(void),   // custom effect for HIVE
-      mode_HIVE_wave(void);              // custom effect for HIVE
+      mode_HIVE_wave(void),              // custom effect for HIVE
+      mode_HIVE_Firework_2D(void);       // custom effect for HIVE
 
   private:
+    WS2812FX() {
+      //assign each member of the _mode[] array to its respective function reference 
+      _mode[FX_MODE_STATIC]                  = &WS2812FX::mode_static;
+      _mode[FX_MODE_BLINK]                   = &WS2812FX::mode_blink;
+      _mode[FX_MODE_COLOR_WIPE]              = &WS2812FX::mode_color_wipe;
+      _mode[FX_MODE_COLOR_WIPE_RANDOM]       = &WS2812FX::mode_color_wipe_random;
+      _mode[FX_MODE_RANDOM_COLOR]            = &WS2812FX::mode_random_color;
+      _mode[FX_MODE_COLOR_SWEEP]             = &WS2812FX::mode_color_sweep;
+      _mode[FX_MODE_DYNAMIC]                 = &WS2812FX::mode_dynamic;
+      _mode[FX_MODE_RAINBOW]                 = &WS2812FX::mode_rainbow;
+      _mode[FX_MODE_RAINBOW_CYCLE]           = &WS2812FX::mode_rainbow_cycle;
+      _mode[FX_MODE_SCAN]                    = &WS2812FX::mode_scan;
+      _mode[FX_MODE_DUAL_SCAN]               = &WS2812FX::mode_dual_scan;
+      _mode[FX_MODE_FADE]                    = &WS2812FX::mode_fade;
+      _mode[FX_MODE_THEATER_CHASE]           = &WS2812FX::mode_theater_chase;
+      _mode[FX_MODE_THEATER_CHASE_RAINBOW]   = &WS2812FX::mode_theater_chase_rainbow;
+      _mode[FX_MODE_SAW]                     = &WS2812FX::mode_saw;
+      _mode[FX_MODE_TWINKLE]                 = &WS2812FX::mode_twinkle;
+      _mode[FX_MODE_DISSOLVE]                = &WS2812FX::mode_dissolve;
+      _mode[FX_MODE_DISSOLVE_RANDOM]         = &WS2812FX::mode_dissolve_random;
+      _mode[FX_MODE_SPARKLE]                 = &WS2812FX::mode_sparkle;
+      _mode[FX_MODE_FLASH_SPARKLE]           = &WS2812FX::mode_flash_sparkle;
+      _mode[FX_MODE_HYPER_SPARKLE]           = &WS2812FX::mode_hyper_sparkle;
+      _mode[FX_MODE_STROBE]                  = &WS2812FX::mode_strobe;
+      _mode[FX_MODE_STROBE_RAINBOW]          = &WS2812FX::mode_strobe_rainbow;
+      _mode[FX_MODE_MULTI_STROBE]            = &WS2812FX::mode_multi_strobe;
+      _mode[FX_MODE_BLINK_RAINBOW]           = &WS2812FX::mode_blink_rainbow;
+      _mode[FX_MODE_ANDROID]                 = &WS2812FX::mode_android;
+      _mode[FX_MODE_CHASE_COLOR]             = &WS2812FX::mode_chase_color;
+      _mode[FX_MODE_CHASE_RANDOM]            = &WS2812FX::mode_chase_random;
+      _mode[FX_MODE_CHASE_RAINBOW]           = &WS2812FX::mode_chase_rainbow;
+      _mode[FX_MODE_CHASE_FLASH]             = &WS2812FX::mode_chase_flash;
+      _mode[FX_MODE_CHASE_FLASH_RANDOM]      = &WS2812FX::mode_chase_flash_random;
+      _mode[FX_MODE_CHASE_RAINBOW_WHITE]     = &WS2812FX::mode_chase_rainbow_white;
+      _mode[FX_MODE_COLORFUL]                = &WS2812FX::mode_colorful;
+      _mode[FX_MODE_TRAFFIC_LIGHT]           = &WS2812FX::mode_traffic_light;
+      _mode[FX_MODE_COLOR_SWEEP_RANDOM]      = &WS2812FX::mode_color_sweep_random;
+      _mode[FX_MODE_RUNNING_COLOR]           = &WS2812FX::mode_running_color;
+      _mode[FX_MODE_AURORA]                  = &WS2812FX::mode_aurora;
+      _mode[FX_MODE_RUNNING_RANDOM]          = &WS2812FX::mode_running_random;
+      _mode[FX_MODE_LARSON_SCANNER]          = &WS2812FX::mode_larson_scanner;
+      _mode[FX_MODE_COMET]                   = &WS2812FX::mode_comet;
+      _mode[FX_MODE_FIREWORKS]               = &WS2812FX::mode_fireworks;
+      _mode[FX_MODE_RAIN]                    = &WS2812FX::mode_rain;
+      _mode[FX_MODE_TETRIX]                  = &WS2812FX::mode_tetrix;
+      _mode[FX_MODE_FIRE_FLICKER]            = &WS2812FX::mode_fire_flicker;
+      _mode[FX_MODE_GRADIENT]                = &WS2812FX::mode_gradient;
+      _mode[FX_MODE_LOADING]                 = &WS2812FX::mode_loading;
+      _mode[FX_MODE_POLICE]                  = &WS2812FX::mode_police;
+      _mode[FX_MODE_FAIRY]                   = &WS2812FX::mode_fairy;
+      _mode[FX_MODE_TWO_DOTS]                = &WS2812FX::mode_two_dots;
+      _mode[FX_MODE_FAIRYTWINKLE]            = &WS2812FX::mode_fairytwinkle;
+      _mode[FX_MODE_RUNNING_DUAL]            = &WS2812FX::mode_running_dual;
+      _mode[FX_MODE_HALLOWEEN]               = &WS2812FX::mode_halloween;
+      _mode[FX_MODE_TRICOLOR_CHASE]          = &WS2812FX::mode_tricolor_chase;
+      _mode[FX_MODE_TRICOLOR_WIPE]           = &WS2812FX::mode_tricolor_wipe;
+      _mode[FX_MODE_TRICOLOR_FADE]           = &WS2812FX::mode_tricolor_fade;
+      _mode[FX_MODE_BREATH]                  = &WS2812FX::mode_breath;
+      _mode[FX_MODE_RUNNING_LIGHTS]          = &WS2812FX::mode_running_lights;
+      _mode[FX_MODE_LIGHTNING]               = &WS2812FX::mode_lightning;
+      _mode[FX_MODE_ICU]                     = &WS2812FX::mode_icu;
+      _mode[FX_MODE_MULTI_COMET]             = &WS2812FX::mode_multi_comet;
+      _mode[FX_MODE_DUAL_LARSON_SCANNER]     = &WS2812FX::mode_dual_larson_scanner;
+      _mode[FX_MODE_RANDOM_CHASE]            = &WS2812FX::mode_random_chase;
+      _mode[FX_MODE_OSCILLATE]               = &WS2812FX::mode_oscillate;
+      _mode[FX_MODE_FIRE_2012]               = &WS2812FX::mode_fire_2012;
+      _mode[FX_MODE_PRIDE_2015]              = &WS2812FX::mode_pride_2015;
+      _mode[FX_MODE_BPM]                     = &WS2812FX::mode_bpm;
+      _mode[FX_MODE_JUGGLE]                  = &WS2812FX::mode_juggle;
+      _mode[FX_MODE_PALETTE]                 = &WS2812FX::mode_palette;
+      _mode[FX_MODE_COLORWAVES]              = &WS2812FX::mode_colorwaves;
+      _mode[FX_MODE_FILLNOISE8]              = &WS2812FX::mode_fillnoise8;
+      _mode[FX_MODE_NOISE16_1]               = &WS2812FX::mode_noise16_1;
+      _mode[FX_MODE_NOISE16_2]               = &WS2812FX::mode_noise16_2;
+      _mode[FX_MODE_NOISE16_3]               = &WS2812FX::mode_noise16_3;
+      _mode[FX_MODE_NOISE16_4]               = &WS2812FX::mode_noise16_4;
+      _mode[FX_MODE_COLORTWINKLE]            = &WS2812FX::mode_colortwinkle;
+      _mode[FX_MODE_LAKE]                    = &WS2812FX::mode_lake;
+      _mode[FX_MODE_METEOR]                  = &WS2812FX::mode_meteor;
+      _mode[FX_MODE_METEOR_SMOOTH]           = &WS2812FX::mode_meteor_smooth;
+      _mode[FX_MODE_RAILWAY]                 = &WS2812FX::mode_railway;
+      _mode[FX_MODE_RIPPLE]                  = &WS2812FX::mode_ripple;
+      _mode[FX_MODE_TWINKLEFOX]              = &WS2812FX::mode_twinklefox;
+      _mode[FX_MODE_TWINKLECAT]              = &WS2812FX::mode_twinklecat;
+      _mode[FX_MODE_HALLOWEEN_EYES]          = &WS2812FX::mode_halloween_eyes;
+      _mode[FX_MODE_STATIC_PATTERN]          = &WS2812FX::mode_static_pattern;
+      _mode[FX_MODE_TRI_STATIC_PATTERN]      = &WS2812FX::mode_tri_static_pattern;
+      _mode[FX_MODE_SPOTS]                   = &WS2812FX::mode_spots;
+      _mode[FX_MODE_SPOTS_FADE]              = &WS2812FX::mode_spots_fade;
+      _mode[FX_MODE_GLITTER]                 = &WS2812FX::mode_glitter;
+      _mode[FX_MODE_CANDLE]                  = &WS2812FX::mode_candle;
+      _mode[FX_MODE_STARBURST]               = &WS2812FX::mode_starburst;
+      _mode[FX_MODE_EXPLODING_FIREWORKS]     = &WS2812FX::mode_exploding_fireworks;
+      _mode[FX_MODE_BOUNCINGBALLS]           = &WS2812FX::mode_bouncing_balls;
+      _mode[FX_MODE_SINELON]                 = &WS2812FX::mode_sinelon;
+      _mode[FX_MODE_SINELON_DUAL]            = &WS2812FX::mode_sinelon_dual;
+      _mode[FX_MODE_SINELON_RAINBOW]         = &WS2812FX::mode_sinelon_rainbow;
+      _mode[FX_MODE_POPCORN]                 = &WS2812FX::mode_popcorn;
+      _mode[FX_MODE_DRIP]                    = &WS2812FX::mode_drip;
+      _mode[FX_MODE_PLASMA]                  = &WS2812FX::mode_plasma;
+      _mode[FX_MODE_PERCENT]                 = &WS2812FX::mode_percent;
+      _mode[FX_MODE_RIPPLE_RAINBOW]          = &WS2812FX::mode_ripple_rainbow;
+      _mode[FX_MODE_HEARTBEAT]               = &WS2812FX::mode_heartbeat;
+      _mode[FX_MODE_PACIFICA]                = &WS2812FX::mode_pacifica;
+      _mode[FX_MODE_CANDLE_MULTI]            = &WS2812FX::mode_candle_multi;
+      _mode[FX_MODE_SOLID_GLITTER]           = &WS2812FX::mode_solid_glitter;
+      _mode[FX_MODE_SUNRISE]                 = &WS2812FX::mode_sunrise;
+      _mode[FX_MODE_PHASED]                  = &WS2812FX::mode_phased;
+      _mode[FX_MODE_TWINKLEUP]               = &WS2812FX::mode_twinkleup;
+      _mode[FX_MODE_NOISEPAL]                = &WS2812FX::mode_noisepal;
+      _mode[FX_MODE_SINEWAVE]                = &WS2812FX::mode_sinewave;
+      _mode[FX_MODE_PHASEDNOISE]             = &WS2812FX::mode_phased_noise;
+      _mode[FX_MODE_FLOW]                    = &WS2812FX::mode_flow;
+      _mode[FX_MODE_CHUNCHUN]                = &WS2812FX::mode_chunchun;
+      _mode[FX_MODE_DANCING_SHADOWS]         = &WS2812FX::mode_dancing_shadows;
+      _mode[FX_MODE_WASHING_MACHINE]         = &WS2812FX::mode_washing_machine;
+      _mode[FX_MODE_CANDY_CANE]              = &WS2812FX::mode_candy_cane;
+      _mode[FX_MODE_BLENDS]                  = &WS2812FX::mode_blends;
+      _mode[FX_MODE_TV_SIMULATOR]            = &WS2812FX::mode_tv_simulator;
+      _mode[FX_MODE_DYNAMIC_SMOOTH]          = &WS2812FX::mode_dynamic_smooth;
+      _mode[FX_MODE_HIVE_STROBE_SEG]         = &WS2812FX::mode_HIVE_strobing_segments; // custom effect for HIVE
+      _mode[FX_MODE_HIVE_ROTATE]             = &WS2812FX::mode_HIVE_rotate; // custom effect for HIVE
+      _mode[FX_MODE_HIVE_ROTATE_REV]         = &WS2812FX::mode_HIVE_rotate_rev; // custom effect for HIVE
+      _mode[FX_MODE_HIVE_MATRIX]             = &WS2812FX::mode_HIVE_matrix; // custom effect for HIVE
+      _mode[FX_MODE_HIVE_MATRIX_REV]         = &WS2812FX::mode_HIVE_matrix_rev; // custom effect for HIVE
+      _mode[FX_MODE_HIVE_MATRIX_FULL]        = &WS2812FX::mode_HIVE_matrix_full; // custom effect for HIVE
+      _mode[FX_MODE_HIVE_MATRIX_REV_FULL]    = &WS2812FX::mode_HIVE_matrix_rev_full; // custom effect for HIVE
+      _mode[FX_MODE_HIVE_WAVE]               = &WS2812FX::mode_HIVE_wave; //custom effect for HIVE
+      _mode[FX_MODE_HIVE_FIREWORKS_2D]       = &WS2812FX::mode_HIVE_Firework_2D; // custom effect for HIVE
+
+      _brightness = DEFAULT_BRIGHTNESS;
+      currentPalette = CRGBPalette16(CRGB::Black);
+      targetPalette = CloudColors_p;
+      ablMilliampsMax = 850;
+      currentMilliamps = 0;
+      timebase = 0;
+      resetSegments();
+    }
+
     uint32_t crgb_to_col(CRGB fastled);
     CRGB col_to_crgb(uint32_t);
     CRGBPalette16 currentPalette;

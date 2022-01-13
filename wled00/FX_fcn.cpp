@@ -1197,7 +1197,7 @@ uint32_t WS2812FX::gamma32(uint32_t color)
   return RGBW32(r, g, b, w);
 }
 
-WS2812FX* WS2812FX::instance = nullptr;
+// WS2812FX* WS2812FX::instance = nullptr;
 
 //Bus static member definition, would belong in bus_manager.cpp
 int16_t Bus::_cct = -1;
