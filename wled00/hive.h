@@ -30,7 +30,6 @@ class Hive {
         const std::vector<uint8_t> nextEdges = hiveNextEdges.at(index);
         const std::vector<bool> prevDirs = hivePrevDirs.at(index);
         const std::vector<bool> nextDirs = hiveNextDirs.at(index);
-        std::cout << "=== " << (int) index << " / " << (int) prevEdges.at(0) << " / " << (int) nextEdges.at(0) << " ===" << std::endl;
         for (uint8_t prevEdgeIndex = 0; prevEdgeIndex < prevEdges.size(); prevEdgeIndex++) {
           this->edges.at(index).addPrevEdge(prevEdges.at(prevEdgeIndex), prevDirs.at(prevEdgeIndex));
         }

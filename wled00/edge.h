@@ -32,27 +32,6 @@ class Edge {
     Edge(uint16_t startLedIndex, uint8_t length) {
       this->startLedIndex = startLedIndex;
       this->length = length;
-      switch (angle) {
-        case ANGLE_0_DEG:
-          this->angle = ANGLE_0_DEG;
-          break;
-        case ANGLE_60_DEG:
-          this->angle = ANGLE_60_DEG;
-          break;
-        case ANGLE_120_DEG:
-          this->angle = ANGLE_120_DEG;
-          break;
-        case ANGLE_180_DEG:
-          this->angle = ANGLE_180_DEG;
-          break;
-        case ANGLE_240_DEG:
-          this->angle = ANGLE_240_DEG;
-          break;
-        case ANGLE_300_DEG:
-          this->angle = ANGLE_300_DEG;
-          break;
-      }
-      this->angle = (*new Angle());
     };
 
   void setAngle(Angle angle);

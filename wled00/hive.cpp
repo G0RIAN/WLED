@@ -18,10 +18,6 @@ const Edge &Hive::getLastEdge() {
   return getEdges().at(this->edges.size() - 1);
 };
 const Edge &Hive::getEdgeByIndex(uint8_t index) {
-  if (index > this->edges.size()) {
-    std::cout << "Out of range: " << index << " > " << this->edges.size() << std::endl;
-    return *new Edge(-1, this->edges.at((int) 0).getLength());
-  }
   return getEdges().at(index);
 };
 
