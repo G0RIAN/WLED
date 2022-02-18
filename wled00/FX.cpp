@@ -25,10 +25,13 @@
 */
 
 #include "FX.h"
+#include "wled.h"
 #include "hive.h"
 
 #include <algorithm>
 #include <iterator>
+#include <sstream>
+#include <string>
 
 #define IBN 5100
 #define PALETTE_SOLID_WRAP (paletteBlend == 1 || paletteBlend == 3)
@@ -4620,7 +4623,7 @@ uint16_t WS2812FX::mode_HIVE_matrix_rev_full(void) {
 * Wave Left-Right
 */
 uint16_t WS2812FX::mode_HIVE_wave(void) {
-    uint32_t cycleTime = 250 + (255 - SEGMENT.speed) * 100;
+    // uint32_t cycleTime = 250 + (255 - SEGMENT.speed) * 100;
     return FRAMETIME;
 }
 
@@ -4628,10 +4631,137 @@ uint16_t WS2812FX::mode_HIVE_wave(void) {
 * New awesome Hive 51 Light Installation effect.
 * Firework 2 step animation (rocket ascend and explosion) in 2D
 */
+#define rocketLength 4 // maximum is edge length (e.g. 10)
+
 uint16_t WS2812FX::mode_HIVE_Firework_2D(void) {
-    const Edge startingEdge = Hive::getInstance().getRandomEdge();
-    for(uint8_t index = 0; index > startingEdge.getLength(); index++) {
-        startingEdge.setColor(RED, index);
+    try {
+        uint32_t cycleTime = 1000 + (255 - SEGMENT.speed) * 200;                     // total cycle time in ms
+        uint32_t perc = now % cycleTime;                                            // current time step in active cycle in ms
+        uint16_t prog = perc * 100 / cycleTime;  // current progress in active cycle (0 = start, 10 * (number of edges per cycle) = end)
+
+        DEBUG_PRINTLN("Trying cast...");
+        Serial.flush();
+        uint16_t* segenvData = (uint16_t*) SEGENV.data;
+        DEBUG_PRINTLN("CAST SUCCESFUL");
+        Serial.flush();
+
+        if(!SEGENV.data || sizeof(segenvData) != 4) {
+            fill(BLACK);
+            if(!SEGENV.allocateData(rocketLength * 32)) {
+                fill(RED);
+                #ifdef WLED_DEBUG
+                String msg = "Failed to allocate ";
+                char temp[2];
+                itoa(rocketLength * 8, temp, 10);
+                msg.concat(temp);
+                msg.concat(" bytes");
+                DEBUG_PRINTLN(msg);
+                #endif
+                return FRAMETIME;
+            } else {
+                DEBUG_PRINT("16 bit cast is of size: ");
+                DEBUG_PRINTLN(sizeof(segenvData));
+                uint8_t startingEdgeIndex = random8(hive.getEdges().size() - 1);
+                DEBUG_PRINT("Random edge index: ");
+                DEBUG_PRINTLN(startingEdgeIndex);
+                uint16_t tailPosition = hive.getEdgeByIndex(startingEdgeIndex).getStartLedIndex(); // position index of rocket
+                for (uint8_t index = 0; index < rocketLength; index ++){
+                    segenvData[index] = tailPosition + index;
+                    setColor(tailPosition + index, WHITE);
+                }
+            }
+        } 
+
+        fade_out(0);
+        if (prog == 0) {
+            fill(BLACK);
+            SEGENV.aux0 = true; // movement direction (true = ascending indices; false = descending indices)
+            uint8_t startingEdgeIndex = random8(hive.getEdges().size() - 1);
+            DEBUG_PRINT("Random edge index (prog = 0): ");
+            DEBUG_PRINTLN(startingEdgeIndex);
+            uint16_t tailPosition = hive.getEdgeByIndex(startingEdgeIndex).getStartLedIndex(); // position index of rocket
+
+            for (uint8_t index = 0; index < rocketLength; index++){
+                segenvData[index] = tailPosition + index;
+                DEBUG_PRINT(segenvData[index]);
+                DEBUG_PRINT(" / ");
+                setColor(segenvData[index], WHITE);
+            }
+            DEBUG_PRINTLN();
+
+        } else {
+            if (prog < 70) {
+                // ascending rocket
+                // move forwards
+                for (uint8_t index = 0; index < rocketLength; index++) {
+                    DEBUG_PRINT(segenvData[index]);
+                    DEBUG_PRINT(" / ");
+                    setColor(segenvData[index], WHITE);
+                }
+                DEBUG_PRINTLN();
+
+                for (uint8_t tailIndex = 0; tailIndex < rocketLength - 1; tailIndex++) {
+                    // shift indices back 1 step [0,1,2,3] -> [1,2,3,*] (new position * is overwritten in next step)
+                    /*DEBUG_PRINT("Loop Index: ");
+                    DEBUG_PRINT(tailIndex);
+                    DEBUG_PRINT(" / ");
+                    DEBUG_PRINTLN(sizeof(segenvData));
+                    Serial.flush();*/
+                    segenvData[tailIndex] = segenvData[tailIndex + 1];
+                } 
+                uint8_t edgeIndex = segenvData[rocketLength - 1] / hive.getFirstEdge().getLength();
+                uint8_t nextEdgeIndex = (segenvData[rocketLength - 1] + SEGENV.aux0?1:-1) / hive.getFirstEdge().getLength();
+                // move head of rocket to next LED (either on same or new edge)
+                //return FRAMETIME;
+                if (edgeIndex == nextEdgeIndex) {
+                    // rocket is still on the same edge
+                    /*DEBUG_PRINT("Loop Index: ");
+                    DEBUG_PRINT(rocketLength - 1);
+                    DEBUG_PRINT(" / ");
+                    DEBUG_PRINTLN(sizeof(segenvData));
+                    Serial.flush();*/
+                    DEBUG_PRINTLN("Incrementing last index...");
+                    segenvData[rocketLength - 1] = segenvData[rocketLength - 1] + SEGENV.aux0?1:-1;
+                } else {
+                    // rocket moves to a new edge
+                    if (SEGENV.aux0) {
+                        // moving forwards
+                        std::vector<uint8_t> movementOptions = hive.getEdgeByIndex(edgeIndex).getNextEdges();
+                        // choose next Edge
+                        uint8_t choice = random8(movementOptions.size() - 1);
+                        segenvData[rocketLength - 1] = movementOptions.size() > 1?movementOptions.at(choice):movementOptions.at(0);
+                        // decide whether next segment is cycled forwards or backwards
+                        SEGENV.aux0 = hive.getEdgeByIndex(edgeIndex).getNextDirs().at(choice);
+                        DEBUG_PRINTLN();
+                        segenvData[rocketLength - 1] = hive.getEdgeByIndex(movementOptions.at(choice)).getStartLedIndex() + SEGENV.aux0?0:9;
+                    } else {
+                        // moving backwards
+                        std::vector<uint8_t> movementOptions = hive.getEdgeByIndex(edgeIndex).getPrevEdges();
+                        // choose next Edge
+                        uint8_t choice = random8(movementOptions.size() - 1);
+                        segenvData[rocketLength - 1] = movementOptions.size() > 1?movementOptions.at(choice):movementOptions.at(0);
+                        // decide whether next segment is cycled forwards or backwards
+                        SEGENV.aux0 = !hive.getEdgeByIndex(edgeIndex).getPrevDirs().at(choice);
+                        segenvData[rocketLength - 1] = hive.getEdgeByIndex(movementOptions.at(choice)).getStartLedIndex() + SEGENV.aux0?0:9;
+                    }
+                    
+                }
+                //blur(255 - SEGMENT.speed);
+            } else {
+                // exploding rocket
+                // TODO
+                int a = 0;
+                a++;
+                //blur(255 - SEGMENT.speed);
+            }
+        }
+        
+        SEGENV.aux1 = prog; // do i need that?
+        return FRAMETIME;
     }
-    return FRAMETIME;
+    catch(const std::exception& e)
+    {
+        DEBUG_PRINTLN(e.what());
+        return FRAMETIME;
+    }
 }
