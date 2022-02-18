@@ -5,8 +5,6 @@
 #include "stdint.h"
 #include "const.h"
 #include "vector"
-//#include "FX.h"
-
 
 class Edge {
   public: 
@@ -35,8 +33,6 @@ class Edge {
     };
 
   void setAngle(Angle angle);
-  void setColors(std::vector<uint32_t> colors) const;
-  void setColor(uint32_t color, uint8_t index) const;
   void addPrevEdge(const uint8_t prevEdgeIndex, bool isForward);
   void addNextEdge(const uint8_t nextEdgeIndex, bool isForward);
   const std::vector<uint8_t> &getPrevEdges() const;

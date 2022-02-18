@@ -1,17 +1,4 @@
 #include "edge.h"
-#ifndef TLED
-  #include "FX.h"
-
-void Edge::setColor(uint32_t color, uint8_t index) const {
-  WS2812FX::getInstance().setColor(startLedIndex + index, color);
-}
-void Edge::setColors(std::vector<uint32_t> colors) const {
-  for (uint8_t index = 0; index < colors.size(); index++) {
-    setColor(colors.at(index), index);
-  }
-}
-
-#endif
 
 void Edge::addPrevEdge(uint8_t edgeIndex, bool isForward) {
   this->prevEdges.push_back(edgeIndex);
