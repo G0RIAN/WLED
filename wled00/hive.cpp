@@ -6,18 +6,18 @@
 #ifndef TLED 
 #include "FX.h"
 
-const Edge &Hive::getRandomEdge() {
+const Edge &Hive::getRandomEdge() const{
   return getEdges().at(random8(this->edges.size() - 1));
 };
 #endif
 
-const Edge &Hive::getFirstEdge() {
+const Edge &Hive::getFirstEdge() const {
   return getEdges().at(0);
 };
-const Edge &Hive::getLastEdge() {
+const Edge &Hive::getLastEdge() const {
   return getEdges().at(this->edges.size() - 1);
 };
-const Edge &Hive::getEdgeByIndex(uint8_t index) {
+const Edge &Hive::getEdgeByIndex(uint8_t index) const {
   return getEdges().at(index);
 };
 

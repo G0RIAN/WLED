@@ -5,7 +5,7 @@
 #include "cstdlib"
 #include "iostream"
 #include "edge.h"
-#include "hiveConfig.h"
+#include "hive_config.h"
 
 class Hive {
   private:
@@ -43,11 +43,11 @@ class Hive {
 
   public:
   #ifndef TLED 
-    const Edge &getRandomEdge();
+    const Edge &getRandomEdge() const;
   #endif 
-    const Edge &getFirstEdge();
-    const Edge &getLastEdge();
-    const Edge &getEdgeByIndex(uint8_t index);
+    const Edge &getFirstEdge() const;
+    const Edge &getLastEdge() const;
+    const Edge &getEdgeByIndex(uint8_t index) const;
     const std::vector<Edge> &getEdges() const;
 
     static Hive &getInstance() {
